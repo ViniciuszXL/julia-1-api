@@ -1,34 +1,46 @@
 # Julia-1 API
 
-Dockerized REST API for [SupersonicLabs/Julia-1](https://huggingface.co/SupersonicLabs/Julia-1), built with FastAPI for CPU-first deployments, Docker, and Coolify.
+**English** | [Português (Brasil)](README.pt-BR.md)
 
-Julia-1 is a compact decision model for classification, routing, scoring, and Boolean decisions rather than generative chat.
+A lightweight, Dockerized REST API for [SupersonicLabs/Julia-1](https://huggingface.co/SupersonicLabs/Julia-1), built with FastAPI for CPU-first deployments, Docker, and Coolify.
+
+Julia-1 is a compact decision model designed for classification, routing, scoring, and Boolean decisions rather than generative chat.
 
 ## Features
 
 - FastAPI REST interface
-- CPU-first Docker image
-- Model stays loaded between requests
+- CPU-first deployment
+- Docker-ready and Coolify-friendly
+- Keeps Julia-1 loaded in memory between requests
 - Health check endpoint
-- Interactive OpenAPI docs at `/docs`
-- Ready for Coolify
+- Interactive OpenAPI documentation at `/docs`
+- Configuration through environment variables
+- Simple `/v1/decide` endpoint
 
-## Docker
+## Quick Start with Docker
 
 ```bash
 docker build -t julia-1-api .
-docker run --rm -p 8000:8000 -e JULIA_CPU_THREADS=4 julia-1-api
+docker run --rm -p 8000:8000 \
+  -e JULIA_CPU_THREADS=4 \
+  julia-1-api
 ```
 
-Then visit `http://localhost:8000/docs`.
+Open the interactive API documentation at:
+
+```text
+http://localhost:8000/docs
+```
 
 ## API
+
+### Health Check
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-Example decision:
+### Decision
 
 ```bash
 curl -X POST http://localhost:8000/v1/decide \
@@ -49,32 +61,61 @@ curl -X POST http://localhost:8000/v1/decide \
   }'
 ```
 
-## Coolify
+## Deploying with Coolify
 
-Create an Application from this repository and select the **Dockerfile** build pack.
+Create a new Application in Coolify from this GitHub repository and select **Dockerfile** as the build pack.
 
-Recommended starting point:
+Recommended starting configuration:
 
 - Internal port: `8000`
-- Health check: `/health`
+- Health check path: `/health`
 - CPU limit: 2-4 CPUs
 - Memory limit: 2-4 GB
+- Workers: 1
 - `JULIA_CPU_THREADS=4`
 
-For hosts running other latency-sensitive workloads, start conservatively and increase CPU only when benchmarks justify it.
+If the host also runs latency-sensitive workloads, start conservatively and increase the CPU allocation only when benchmarks justify it.
 
-## Environment
+## Environment Variables
 
-| Variable | Default | Purpose |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `JULIA_CPU_THREADS` | `4` | CPU threads used by Julia |
-| `JULIA_MODEL_PATH` | `/models/Julia-1` | Model location |
+| `JULIA_CPU_THREADS` | `4` | CPU threads available to Julia |
+| `JULIA_MODEL_PATH` | `/models/Julia-1` | Model location inside the container |
 | `JULIA_DEVICE` | `cpu` | Inference device |
 
-## Upstream
+## Repository Structure
 
-This repository is an independent wrapper and is not affiliated with Supersonic Labs. Julia-1 model artifacts remain subject to the upstream license and terms.
+```text
+.
+├── app/
+│   └── main.py
+├── .github/
+│   ├── workflows/
+│   │   └── ci.yml
+│   ├── CODEOWNERS
+│   └── pull_request_template.md
+├── Dockerfile
+├── requirements.txt
+├── .env.example
+├── .dockerignore
+├── .gitignore
+├── CONTRIBUTING.md
+└── LICENSE
+```
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+The `main` branch is intended to receive changes through reviewed pull requests.
+
+## Upstream Project
+
+This repository is an independent API wrapper and is not affiliated with Supersonic Labs.
+
+Julia-1 model artifacts remain subject to the upstream project's license and terms.
 
 ## License
 
-Wrapper code is licensed under MIT.
+The wrapper code in this repository is licensed under the [MIT License](LICENSE).
