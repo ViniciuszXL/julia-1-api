@@ -21,7 +21,13 @@ case "$PROVIDER" in
 esac
 
 REPO_ID="${MODEL_ID:-$DEFAULT_REPO}"
-MODEL_DIR="${MODEL_PATH:-${JULIA_MODEL_PATH:-$DEFAULT_DIR}}"
+if [ -n "${MODEL_PATH:-}" ]; then
+  MODEL_DIR="$MODEL_PATH"
+elif [ "$PROVIDER" = "julia" ] && [ -n "${JULIA_MODEL_PATH:-}" ]; then
+  MODEL_DIR="$JULIA_MODEL_PATH"
+else
+  MODEL_DIR="$DEFAULT_DIR"
+fi
 MODEL_FILE="$MODEL_DIR/$MARKER"
 
 if [ ! -s "$MODEL_FILE" ]; then
