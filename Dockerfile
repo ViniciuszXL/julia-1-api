@@ -7,12 +7,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl git && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r requirements.txt \
+    && python -m pip install --index-url https://download.pytorch.org/whl/cpu torch \
+    && python -m pip install "flash-linear-attention[cpu]" \
+    && python -m pip install --no-deps decider-ai==1.5.0 \
+    && python -m pip install "transformers>=5" "numpy<2" jinja2
 # Install Julia-1 source without baking the large model checkpoint into the image.
 RUN git clone --depth 1 https://huggingface.co/SupersonicLabs/Julia-1 /opt/julia-1 \
     && rm -rf /opt/julia-1/.git \
     && python -m pip install -e /opt/julia-1
-# decider-ai enables MODEL_PROVIDER=decider while Julia remains the default provider.\nCOPY app ./app
+COPY app ./app
 COPY docker/entrypoint.sh /usr/local/bin/julia-entrypoint
 RUN chmod +x /usr/local/bin/julia-entrypoint && mkdir -p /models
 VOLUME ["/models"]
