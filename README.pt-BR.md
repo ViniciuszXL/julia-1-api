@@ -21,8 +21,10 @@ Julia-1 é um modelo compacto de decisão voltado para classificação, roteamen
 
 ```bash
 docker build -t julia-1-api .
+docker volume create julia-1-models
 docker run --rm -p 8000:8000 \
   -e JULIA_CPU_THREADS=4 \
+  -v julia-1-models:/models \
   julia-1-api
 ```
 
@@ -73,6 +75,9 @@ Configuração inicial recomendada:
 - Limite de memória: 2-4 GB
 - Workers: 1
 - `JULIA_CPU_THREADS=4`
+- Armazenamento persistente: monte um volume em `/models`
+
+O checkpoint do Julia-1 é baixado na primeira inicialização do container e armazenado em `/models/Julia-1`. Reinicializações e novos deploys reutilizam o checkpoint em cache. Manter o modelo em armazenamento persistente evita embutir o grande arquivo `model.safetensors` nas camadas da imagem Docker.
 
 Se o servidor também executar serviços sensíveis a latência, comece com poucos recursos e aumente a alocação de CPU somente quando os benchmarks justificarem.
 
