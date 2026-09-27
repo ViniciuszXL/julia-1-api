@@ -7,8 +7,15 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl git && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-RUN mkdir -p /models && python -c "from huggingface_hub import snapshot_download; snapshot_download('SupersonicLabs/Julia-1', local_dir='/models/Julia-1')" && python -m pip install -e /models/Julia-1
+# Install Julia-1 source without baking the large model checkpoint into the image.
+RUN git clone --depth 1 https://huggingface.co/SupersonicLabs/Julia-1 /opt/julia-1 \
+    && rm -rf /opt/julia-1/.git \
+    && python -m pip install -e /opt/julia-1
 COPY app ./app
+COPY docker/entrypoint.sh /usr/local/bin/julia-entrypoint
+RUN chmod +x /usr/local/bin/julia-entrypoint && mkdir -p /models
+VOLUME ["/models"]
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+ENTRYPOINT ["julia-entrypoint"]
 CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--workers","1","--proxy-headers","--forwarded-allow-ips=*"]
