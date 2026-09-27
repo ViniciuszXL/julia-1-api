@@ -11,14 +11,21 @@ from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from julia import load_model
 
-MODEL_PATH = os.getenv("JULIA_MODEL_PATH", "/models/Julia-1")
-DEVICE = os.getenv("JULIA_DEVICE", "cpu")
-MAX_CONCURRENCY = max(1, int(os.getenv("JULIA_MAX_CONCURRENCY", "2")))
-RATE_LIMIT_RPM = max(0, int(os.getenv("JULIA_RATE_LIMIT_RPM", "60")))
-MAX_BODY_BYTES = max(1024, int(os.getenv("JULIA_MAX_BODY_BYTES", "262144")))
-TRUST_PROXY_HEADERS = os.getenv("JULIA_TRUST_PROXY_HEADERS", "true").lower() in {"1", "true", "yes"}
+PROVIDER = os.getenv("MODEL_PROVIDER", "julia").strip().lower()
+if PROVIDER not in {"julia", "decider"}:
+    raise RuntimeError("MODEL_PROVIDER must be 'julia' or 'decider'.")
+
+DEFAULT_MODEL_ID = "SupersonicLabs/Julia-1" if PROVIDER == "julia" else "Mapika/decider-2b"
+DEFAULT_MODEL_PATH = "/models/Julia-1" if PROVIDER == "julia" else "/models/decider-2b"
+MODEL_ID = os.getenv("MODEL_ID", DEFAULT_MODEL_ID)
+MODEL_PATH = os.getenv("MODEL_PATH") or (os.getenv("JULIA_MODEL_PATH") if PROVIDER == "julia" else None) or DEFAULT_MODEL_PATH
+DEVICE = os.getenv("MODEL_DEVICE", os.getenv("JULIA_DEVICE", "cpu"))
+MAX_CONCURRENCY = max(1, int(os.getenv("MODEL_MAX_CONCURRENCY", os.getenv("JULIA_MAX_CONCURRENCY", "2"))))
+RATE_LIMIT_RPM = max(0, int(os.getenv("MODEL_RATE_LIMIT_RPM", os.getenv("JULIA_RATE_LIMIT_RPM", "60"))))
+MAX_BODY_BYTES = max(1024, int(os.getenv("MODEL_MAX_BODY_BYTES", os.getenv("JULIA_MAX_BODY_BYTES", "262144"))))
+TRUST_PROXY_HEADERS = os.getenv("MODEL_TRUST_PROXY_HEADERS", os.getenv("JULIA_TRUST_PROXY_HEADERS", "true")).lower() in {"1", "true", "yes"}
+CPU_THREADS = int(os.getenv("MODEL_CPU_THREADS", os.getenv("JULIA_CPU_THREADS", "4")))
 
 engine = None
 inference_slots = asyncio.Semaphore(MAX_CONCURRENCY)
@@ -62,7 +69,7 @@ class PublicGuardMiddleware(BaseHTTPMiddleware):
                         return JSONResponse({"detail": "Request body too large."}, status_code=413)
                 except ValueError:
                     return JSONResponse({"detail": "Invalid Content-Length."}, status_code=400)
-            if request.url.path == "/v1/decide" and not rate_allowed(client_ip(request)):
+            if request.url.path in {"/v1/decide", "/v1/systemone"} and not rate_allowed(client_ip(request)):
                 with metrics_lock:
                     metrics["rate_limited_total"] += 1
                 return JSONResponse({"detail": "Rate limit exceeded. Try again later."}, status_code=429, headers={"Retry-After": "60"})
@@ -72,11 +79,18 @@ class PublicGuardMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global engine
-    engine = load_model(MODEL_PATH, device=DEVICE, strict_encoding=True, max_length=8192, head_length=512)
+    if PROVIDER == "julia":
+        from julia import load_model
+        engine = load_model(MODEL_PATH, device=DEVICE, strict_encoding=True, max_length=8192, head_length=512)
+    else:
+        import torch
+        from decider.infer import Decider
+        torch.set_num_threads(CPU_THREADS)
+        engine = Decider(MODEL_PATH, device=DEVICE, use_graphs=False)
     yield
 
 
-app = FastAPI(title="Julia-1 API", description="Community REST API for SupersonicLabs/Julia-1.", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Decision Model API", description="Community REST API for Julia-1 and Decider models.", version="1.2.0", lifespan=lifespan)
 app.add_middleware(PublicGuardMiddleware)
 
 
@@ -104,7 +118,7 @@ class DecisionRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"name": "julia-1-api", "model": "SupersonicLabs/Julia-1", "version": app.version, "docs": "/docs"}
+    return {"name": "julia-1-api", "provider": PROVIDER, "model": MODEL_ID, "version": app.version, "docs": "/docs"}
 
 
 @app.get("/health")
@@ -118,7 +132,7 @@ def status():
         snapshot = dict(metrics)
     completed = snapshot["inferences_total"]
     snapshot["average_inference_ms"] = round(snapshot["inference_seconds_total"] * 1000 / completed, 2) if completed else 0.0
-    return {"model": "SupersonicLabs/Julia-1", "device": DEVICE, "cpu_threads": int(os.getenv("JULIA_CPU_THREADS", "4")), "max_concurrency": MAX_CONCURRENCY, "rate_limit_rpm_per_ip": RATE_LIMIT_RPM, "metrics": snapshot}
+    return {"provider": PROVIDER, "model": MODEL_ID, "device": DEVICE, "cpu_threads": CPU_THREADS, "max_concurrency": MAX_CONCURRENCY, "rate_limit_rpm_per_ip": RATE_LIMIT_RPM, "metrics": snapshot}
 
 
 @app.post("/v1/decide")
@@ -129,7 +143,7 @@ async def decide(payload: DecisionRequest):
     await inference_slots.acquire()
     started = time.perf_counter()
     try:
-        result = await run_in_threadpool(lambda: engine.predict(state=payload.state, questions=questions))
+        result = await run_in_threadpool(lambda: engine.predict(state=payload.state, questions=questions) if PROVIDER == "julia" else engine.system_one(payload.state, questions))
         elapsed = time.perf_counter() - started
         with metrics_lock:
             metrics["inferences_total"] += 1
@@ -141,3 +155,8 @@ async def decide(payload: DecisionRequest):
         raise HTTPException(400, str(exc)) from exc
     finally:
         inference_slots.release()
+
+
+@app.post("/v1/systemone")
+async def systemone(payload: DecisionRequest):
+    return await decide(payload)
