@@ -19,7 +19,7 @@ if PROVIDER not in {"julia", "decider"}:
 DEFAULT_MODEL_ID = "SupersonicLabs/Julia-1" if PROVIDER == "julia" else "Mapika/decider-2b"
 DEFAULT_MODEL_PATH = "/models/Julia-1" if PROVIDER == "julia" else "/models/decider-2b"
 MODEL_ID = os.getenv("MODEL_ID", DEFAULT_MODEL_ID)
-MODEL_PATH = os.getenv("MODEL_PATH", os.getenv("JULIA_MODEL_PATH", DEFAULT_MODEL_PATH))
+MODEL_PATH = os.getenv("MODEL_PATH") or (os.getenv("JULIA_MODEL_PATH") if PROVIDER == "julia" else None) or DEFAULT_MODEL_PATH
 DEVICE = os.getenv("MODEL_DEVICE", os.getenv("JULIA_DEVICE", "cpu"))
 MAX_CONCURRENCY = max(1, int(os.getenv("MODEL_MAX_CONCURRENCY", os.getenv("JULIA_MAX_CONCURRENCY", "2"))))
 RATE_LIMIT_RPM = max(0, int(os.getenv("MODEL_RATE_LIMIT_RPM", os.getenv("JULIA_RATE_LIMIT_RPM", "60"))))
@@ -83,7 +83,9 @@ async def lifespan(app: FastAPI):
         from julia import load_model
         engine = load_model(MODEL_PATH, device=DEVICE, strict_encoding=True, max_length=8192, head_length=512)
     else:
+        import torch
         from decider.infer import Decider
+        torch.set_num_threads(CPU_THREADS)
         engine = Decider(MODEL_PATH, device=DEVICE, use_graphs=False)
     yield
 
